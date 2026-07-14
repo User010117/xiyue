@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180" viewBox="0 0 320 180" shape-rendering="crispEdges">
+  <!-- 仅使用曦月设计色板；整数网格保证缩放后的像素边缘清晰。 -->
+  <rect width="320" height="180" fill="#FFF8E8"/>
+  <path fill="#D8CBB5" d="M0 144h320v36H0zM12 16h296v8H12zM12 24h8v112h-8zM300 24h8v112h-8z"/>
+  <path fill="#2D2926" d="M20 24h280v4H20zM20 132h280v4H20zM16 24h4v112h-4zM300 24h4v112h-4z"/>
+  <!-- 月夜窗户 -->
+  <path fill="#263746" d="M36 40h88v64H36z"/>
+  <path fill="#F2E8D5" d="M40 44h80v56H40z"/>
+  <path fill="#263746" d="M76 44h4v56H76zM40 72h80v4H40z"/>
+  <path fill="#C89332" d="M92 48h16v4h4v12h-4v4H92v-4h-4V52h4v-4zm4 4v12h8V52h-8z"/>
+  <path fill="#586B50" d="M48 80h8v4h8v4h8v12H44V84h4z"/>
+  <!-- 显示器与桌面 -->
+  <path fill="#2D2926" d="M144 48h96v68h-96zM176 116h32v12h-32zM160 128h64v4h-64z"/>
+  <path fill="#263746" d="M148 52h88v56h-88z"/>
+  <path fill="#F2E8D5" d="M156 60h72v40h-72z"/>
+  <path fill="#A94332" d="M164 68h12v12h-12zM180 68h20v4h-20zM180 76h40v4h-40z"/>
+  <path fill="#586B50" d="M164 88h28v4h-28zM196 84h24v8h-24z"/>
+  <path fill="#2D2926" d="M128 132h136v8H128zM136 140h8v28h-8zM248 140h8v28h-8z"/>
+  <!-- 创作桌上的像素工具和小植物 -->
+  <path fill="#C89332" d="M152 120h12v12h-12zM168 124h20v8h-20z"/>
+  <path fill="#A94332" d="M224 116h20v16h-20z"/>
+  <path fill="#586B50" d="M228 104h4v12h-4zM236 100h4v16h-4zM224 104h4v8h-4z"/>
+  <!-- 克制的点阵装饰，不参与交互。 -->
+  <path fill="#C89332" d="M272 44h4v4h-4zM280 52h4v4h-4zM264 60h4v4h-4z"/>
+  <path fill="#A94332" d="M36 120h60v4H36zM44 112h44v4H44z"/>
+</svg>

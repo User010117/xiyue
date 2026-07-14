@@ -1,0 +1,464 @@
+/*
+ * 工具专用布局：这里只保留地图拼接与精灵表编辑器的结构规则。
+ * 全站颜色和通用组件外观统一由 modern-pixel.css 管理。
+ */
+.map-stitch-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  color: var(--pixel-ink);
+  background: repeating-conic-gradient(var(--pixel-soft) 0% 25%, var(--pixel-surface) 0% 50%) 50% / 24px 24px;
+}
+
+.map-stitch-float-actions {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 2002;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.map-stitch-generate-float.ant-btn {
+  height: 44px;
+  padding: 0 18px;
+  font-size: 15px;
+  font-weight: 800;
+  border-radius: 0;
+  box-shadow: 4px 4px 0 var(--pixel-ink);
+}
+
+.map-stitch-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 72px;
+  padding: 12px 20px;
+  border-bottom: 2px solid var(--pixel-ink);
+  background: var(--pixel-surface);
+  box-shadow: 0 4px 0 var(--pixel-soft);
+}
+
+.map-stitch-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.map-stitch-title h4 {
+  margin: 0 0 2px 0;
+}
+
+.map-stitch-title-hint {
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.map-stitch-overlap-control {
+  width: 190px;
+  min-width: 190px;
+}
+
+.map-stitch-split-control {
+  width: 124px;
+  min-width: 124px;
+}
+
+.map-stitch-split-control .ant-select {
+  width: 100%;
+}
+
+.map-stitch-split-popup {
+  z-index: 2105;
+}
+
+.map-stitch-overlap-control .ant-typography {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.map-stitch-split-control .ant-typography {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.map-stitch-overlap-control .ant-slider {
+  margin: 4px 6px 0;
+}
+
+.map-stitch-empty {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+}
+
+.map-stitch-empty > .anticon {
+  font-size: 52px;
+  color: var(--pixel-brick);
+}
+
+.map-stitch-empty h3 {
+  margin: 0;
+}
+
+.map-stitch-workspace {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 24px;
+  cursor: default;
+  user-select: none;
+}
+
+.map-stitch-stage-shell {
+  position: relative;
+  flex: 0 0 auto;
+  will-change: transform;
+}
+
+.map-stitch-stage {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: top left;
+}
+
+.map-stitch-source-frame,
+.map-stitch-neighbor-frame {
+  position: absolute;
+  box-sizing: border-box;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+}
+
+.map-stitch-source-frame {
+  outline: 3px solid var(--pixel-green);
+  background: repeating-conic-gradient(var(--pixel-soft) 0% 25%, var(--pixel-surface) 0% 50%) 50% / 16px 16px;
+  box-shadow: 6px 6px 0 var(--pixel-ink);
+}
+
+.map-stitch-source-frame img,
+.map-stitch-neighbor-frame img {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: fill;
+  image-rendering: pixelated;
+}
+
+.map-stitch-neighbor-frame {
+  --tile-accent: var(--pixel-brick);
+  padding: 0;
+  color: var(--pixel-ink);
+  background: repeating-conic-gradient(var(--pixel-surface) 0% 25%, var(--pixel-soft) 0% 50%) 50% / 18px 18px;
+  outline: 4px solid var(--tile-accent);
+  cursor: pointer;
+  box-shadow: inset 0 0 0 3px var(--pixel-surface), 5px 5px 0 var(--pixel-ink);
+}
+
+.map-stitch-neighbor-uploaded {
+  background: transparent;
+}
+
+.map-stitch-neighbor-top {
+  --tile-accent: var(--pixel-brick);
+}
+
+.map-stitch-neighbor-right {
+  --tile-accent: var(--pixel-navy);
+}
+
+.map-stitch-neighbor-bottom {
+  --tile-accent: var(--pixel-green);
+}
+
+.map-stitch-neighbor-left {
+  --tile-accent: var(--pixel-mustard);
+}
+
+.map-stitch-neighbor-frame:hover,
+.map-stitch-neighbor-frame.selected {
+  outline-color: var(--tile-accent);
+  box-shadow: inset 0 0 0 4px var(--pixel-surface), 8px 8px 0 var(--tile-accent);
+}
+
+.map-stitch-stage-hide-borders .map-stitch-source-frame,
+.map-stitch-stage-hide-borders .map-stitch-neighbor-frame,
+.map-stitch-stage-hide-borders .map-stitch-neighbor-frame:hover,
+.map-stitch-stage-hide-borders .map-stitch-neighbor-frame.selected {
+  outline-color: transparent;
+  box-shadow: none;
+  filter: none;
+}
+
+.map-stitch-tile-image-hidden img {
+  opacity: 0;
+}
+
+.map-stitch-frame-label,
+.map-stitch-frame-actions {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  display: flex;
+  transform: translate(-50%, -50%);
+}
+
+.map-stitch-frame-label {
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 160px;
+  max-width: none;
+  padding: 12px 14px;
+  color: #3d3428;
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.25;
+  text-align: center;
+  background: var(--pixel-surface);
+  border: 2px solid var(--tile-accent);
+  border-radius: 0;
+  box-shadow: 4px 4px 0 var(--pixel-ink);
+  transform-origin: center center;
+}
+
+.map-stitch-frame-label small {
+  color: var(--pixel-muted);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.map-stitch-frame-label strong {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 118px;
+  min-height: 32px;
+  padding: 6px 10px;
+  color: #fffaf0;
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1;
+  background: var(--tile-accent);
+  border-radius: 0;
+}
+
+.map-stitch-frame-actions {
+  position: absolute;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(102px, 1fr));
+  gap: 10px;
+  min-width: 236px;
+  max-width: 360px;
+  padding: 12px 14px;
+  background: var(--pixel-surface);
+  border: 3px solid var(--tile-accent);
+  border-radius: 0;
+  box-shadow: 6px 6px 0 var(--pixel-ink);
+  transform-origin: center center;
+}
+
+.map-stitch-frame-actions-wide {
+  min-width: 330px;
+  padding-bottom: 50px;
+}
+
+.map-stitch-neighbor-frame.selected .map-stitch-frame-label {
+  display: none;
+}
+
+.map-stitch-action-btn.ant-btn {
+  min-width: 102px;
+  height: 40px;
+  font-size: 15px;
+  font-weight: 700;
+  border-radius: 0;
+}
+
+.map-stitch-action-btn.ant-btn .anticon {
+  font-size: 16px;
+}
+
+.map-stitch-unload-btn.ant-btn {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 3;
+  min-width: 104px;
+  height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 800;
+  border-radius: 0;
+}
+
+.map-stitch-feather-actions {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  align-items: center;
+}
+
+.map-stitch-feather-cell {
+  position: relative;
+  min-width: 0;
+}
+
+.map-stitch-feather-btn.ant-btn {
+  min-width: 0;
+  width: 100%;
+  height: 32px;
+  padding: 0 6px;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 0;
+}
+
+.map-stitch-feather-top {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.map-stitch-feather-left {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.map-stitch-feather-border-toggle.ant-btn {
+  grid-column: 2;
+  grid-row: 2;
+  min-width: 0;
+  height: 32px;
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 800;
+  border-radius: 0;
+}
+
+.map-stitch-feather-right {
+  grid-column: 3;
+  grid-row: 2;
+}
+
+.map-stitch-feather-bottom {
+  grid-column: 2;
+  grid-row: 3;
+}
+
+.map-stitch-feather-image-toggle.ant-btn {
+  position: absolute;
+  left: -7px;
+  bottom: -7px;
+  z-index: 2;
+  width: 20px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0;
+  font-size: 10px;
+  border-radius: 0;
+  box-shadow: 2px 2px 0 var(--pixel-ink);
+}
+
+.map-stitch-feather-image-toggle.ant-btn .anticon {
+  font-size: 11px;
+}
+
+@media (max-width: 720px) {
+  .map-stitch-toolbar {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .map-stitch-title {
+    flex-basis: 100%;
+    order: 3;
+  }
+
+  .map-stitch-overlap-control {
+    width: min(190px, 100%);
+    min-width: 160px;
+  }
+
+  .map-stitch-split-control {
+    width: min(160px, 100%);
+    min-width: 124px;
+  }
+
+  .map-stitch-workspace {
+    padding: 12px;
+  }
+}
+
+/* SpriteSheetAdjust 模块 - 加宽布局 */
+.sprite-adjust-module {
+  width: 100%;
+  min-width: 0;
+}
+
+.sprite-adjust-module .sprite-adjust-grid {
+  width: 100%;
+  max-width: 1060px;
+  max-height: 560px;
+  min-height: 120px;
+}
+
+/* 行列头格子：居中且不拉伸，防止与帧格重叠 */
+.sprite-adjust-module .sprite-adjust-header-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  justify-self: center;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* 仅对帧格子应用最小尺寸，min-height:0 防止溢出到下一行 */
+.sprite-adjust-module .sprite-adjust-grid > div.sprite-adjust-cell {
+  min-width: 56px;
+  min-height: 56px;
+  box-sizing: border-box;
+}
+
+.sprite-adjust-module .sprite-adjust-anim-display {
+  max-width: 520px;
+}
+
+.image-stash-item-draggable {
+  cursor: grab;
+}
+
+.image-stash-item-draggable:active {
+  cursor: grabbing;
+}
