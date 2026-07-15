@@ -2,6 +2,14 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { DownloadOutlined, ReloadOutlined, SettingOutlined, UploadOutlined } from './PixelIcons'
 import { Alert, Button, Card, Collapse, Divider, Empty, Input, Modal, Select, Space, Switch, Tag, Typography } from 'antd'
 import { fileToBase64, GeminiImageError, generateGeminiImage } from '../lib/geminiImage'
+import {
+  createDefaultReferenceStorageSource,
+  deleteDefaultReferenceBlob,
+  loadDefaultReferenceBlob,
+  MAX_DEFAULT_REFERENCE_BYTES,
+  parseDefaultReferenceStorageSource,
+  saveDefaultReferenceBlob,
+} from '../lib/defaultReferenceStorage'
 import { useImageStash } from '../stash/context'
 
 const { Text } = Typography
@@ -24,8 +32,10 @@ interface DefaultReference {
   id: string
   /** 页面显示的名称。 */
   name: string
-  /** 项目内静态路径或用户保存的 Data URL。 */
+  /** 项目内静态路径、旧版 Data URL、本次会话对象 URL 或 IndexedDB 引用。 */
   source: string
+  /** 自定义大图在 IndexedDB 中的稳定键；内置图与旧版 Data URL 没有此字段。 */
+  storageKey?: string
 }
 
 /** 队列中的单张生成卡；快照确保抽卡过程不受表单后续修改影响。 */
@@ -138,7 +148,10 @@ function loadSavedSettings(): SavedApiImageSettings {
       background: saved.background === 'green' ? 'green' : 'white',
       quantity: saved.quantity === 3 || saved.quantity === 5 || saved.quantity === 10 ? saved.quantity : defaults.quantity,
       defaultReferences: Array.isArray(saved.defaultReferences)
-        ? saved.defaultReferences.filter((item): item is DefaultReference => typeof item?.id === 'string' && typeof item.name === 'string' && typeof item.source === 'string' && (BUILT_IN_DEFAULT_REFERENCES.some((builtIn) => builtIn.source === item.source) || /^data:image\/(png|jpeg|webp);base64,/.test(item.source))).slice(0, 6)
+        ? saved.defaultReferences
+          .filter((item): item is DefaultReference => typeof item?.id === 'string' && typeof item.name === 'string' && typeof item.source === 'string' && (BUILT_IN_DEFAULT_REFERENCES.some((builtIn) => builtIn.source === item.source) || /^data:image\/(png|jpeg|webp);base64,/.test(item.source) || Boolean(parseDefaultReferenceStorageSource(item.source))))
+          .map((item) => ({ ...item, storageKey: parseDefaultReferenceStorageSource(item.source) }))
+          .slice(0, 6)
         : defaults.defaultReferences,
       layoutRules: typeof saved.layoutRules === 'string' && saved.layoutRules.trim() ? saved.layoutRules : defaults.layoutRules,
     }
@@ -149,10 +162,6 @@ function loadSavedSettings(): SavedApiImageSettings {
 
 /** 所有参考图合计的原始体积上限，给 Base64 与提示词保留请求空间。 */
 const MAX_REFERENCE_BYTES = 14 * 1024 * 1024
-/** 用户新增的默认参考图会持久化到浏览器，因此单张限制更小。 */
-const MAX_PERSISTENT_REFERENCE_BYTES = 512 * 1024
-/** localStorage 通常容量有限，控制自定义 Data URL 的总长度以保证保存可用。 */
-const MAX_PERSISTENT_REFERENCE_DATA_LENGTH = 1_800_000
 
 /** 将 Gem 已确认的规则转换为每次请求都携带的固定提示词。 */
 function buildSpritePrompt(description: string, background: 'white' | 'green', layoutRules: string): string {
@@ -240,6 +249,8 @@ export default function ApiImageGenerator() {
   const [cards, setCards] = useState<GenerationCard[]>([])
   /** 队列运行中禁止重复开始，避免重复计费。 */
   const [isRunning, setIsRunning] = useState(false)
+  /** IndexedDB 写入期间禁止重复选择，避免并发上传覆盖同一份页面快照。 */
+  const [isSavingDefaultReference, setIsSavingDefaultReference] = useState(false)
   /** 停止仅影响尚未开始的卡片。 */
   const stopRequestedRef = useRef(false)
   /** 当前控制器只属于正在执行的一张卡，停止时中止本地等待。 */
@@ -250,15 +261,74 @@ export default function ApiImageGenerator() {
   const configInputRef = useRef<HTMLInputElement>(null)
   const referenceInputRef = useRef<HTMLInputElement>(null)
   const defaultReferenceInputRef = useRef<HTMLInputElement>(null)
+  /** 记录自定义默认图的临时预览地址，删除或卸载时统一释放。 */
+  const defaultReferenceObjectUrlsRef = useRef(new Set<string>())
+  /** 只恢复首次加载的 IndexedDB 引用，避免状态更新后重复读取和创建对象 URL。 */
+  const initialDefaultReferences = useRef(defaultReferences).current
 
   useEffect(() => () => {
     if (referencePreviewUrl) URL.revokeObjectURL(referencePreviewUrl)
   }, [referencePreviewUrl])
 
+  /** 页面恢复时把 IndexedDB Blob 转为临时预览地址；缺失记录会从设置中清理。 */
+  useEffect(() => {
+    let cancelled = false
+    const restoreDefaultReferences = async () => {
+      const restored: DefaultReference[] = []
+      let missingCount = 0
+      let readError: unknown
+
+      for (const reference of initialDefaultReferences) {
+        const storageKey = reference.storageKey ?? parseDefaultReferenceStorageSource(reference.source)
+        if (!storageKey) {
+          restored.push(reference)
+          continue
+        }
+        try {
+          const blob = await loadDefaultReferenceBlob(storageKey)
+          if (!blob) {
+            missingCount += 1
+            continue
+          }
+          const source = URL.createObjectURL(blob)
+          if (cancelled) {
+            URL.revokeObjectURL(source)
+            return
+          }
+          defaultReferenceObjectUrlsRef.current.add(source)
+          restored.push({ ...reference, source, storageKey })
+        } catch (error) {
+          // 读取异常时保留元数据，避免临时浏览器故障造成图片记录永久丢失。
+          readError ??= error
+          restored.push(reference)
+        }
+      }
+
+      if (cancelled) return
+      if (missingCount > 0) Modal.warning({ title: '默认参考图已失效', content: `已清理 ${missingCount} 张找不到本地文件的默认参考图。` })
+      if (readError) Modal.error({ title: '默认参考图读取失败', content: readError instanceof Error ? readError.message : '请刷新页面后重试。' })
+      setSavedSettings((previous) => ({ ...previous, defaultReferences: restored }))
+    }
+
+    void restoreDefaultReferences()
+    return () => {
+      cancelled = true
+      defaultReferenceObjectUrlsRef.current.forEach((source) => URL.revokeObjectURL(source))
+      defaultReferenceObjectUrlsRef.current.clear()
+    }
+  }, [initialDefaultReferences])
+
   /** v2 只在用户勾选时持久化 Key；其余草稿仍沿用旧前缀保持兼容。 */
   useEffect(() => {
     try {
-      const persistent = { ...savedSettings, apiKey: rememberKey ? savedSettings.apiKey : '' }
+      const persistent = {
+        ...savedSettings,
+        apiKey: rememberKey ? savedSettings.apiKey : '',
+        defaultReferences: savedSettings.defaultReferences.map(({ storageKey, ...reference }) => ({
+          ...reference,
+          source: storageKey ? createDefaultReferenceStorageSource(storageKey) : reference.source,
+        })),
+      }
       localStorage.setItem(API_IMAGE_SETTINGS_STORAGE_KEY, JSON.stringify(persistent))
       localStorage.removeItem(API_IMAGE_SETTINGS_STORAGE_KEY_V1)
       if (rememberKey) sessionStorage.removeItem(API_IMAGE_SESSION_KEY)
@@ -330,35 +400,57 @@ export default function ApiImageGenerator() {
     setReferenceFile(file)
   }
 
-  /** 新增可长期使用的默认参考图；限制体积以避免浏览器本地存储被占满。 */
+  /** 新增可长期使用的默认参考图；Blob 存入 IndexedDB，设置中只保留稳定引用。 */
   const selectDefaultReference = async (file?: File) => {
     if (!file) return
     if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
       Modal.error({ title: '默认参考图格式不支持', content: '只支持 PNG、JPEG 或 WEBP。' })
       return
     }
-    if (file.size > MAX_PERSISTENT_REFERENCE_BYTES) {
-      Modal.error({ title: '默认参考图过大', content: '可持久化的默认参考图单张不能超过 512KB。' })
+    if (file.size > MAX_DEFAULT_REFERENCE_BYTES) {
+      Modal.error({ title: '默认参考图过大', content: '默认参考图单张不能超过 5MB。' })
       return
     }
     if (defaultReferences.length >= 6) {
       Modal.warning({ title: '默认参考图已达上限', content: '最多保留 6 张，删除不需要的图后再添加。' })
       return
     }
-    const data = await fileToBase64(file)
-    const source = `data:${file.type};base64,${data}`
-    const storedDataLength = defaultReferences.reduce((total, reference) => total + (reference.source.startsWith('data:') ? reference.source.length : 0), 0)
-    if (storedDataLength + source.length > MAX_PERSISTENT_REFERENCE_DATA_LENGTH) {
-      Modal.warning({ title: '默认参考图库容量不足', content: '删除部分自定义默认参考图后再添加，确保设置能长期保存。' })
-      return
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+    setIsSavingDefaultReference(true)
+    try {
+      await saveDefaultReferenceBlob(id, file)
+      const source = URL.createObjectURL(file)
+      defaultReferenceObjectUrlsRef.current.add(source)
+      setDefaultReferences([...defaultReferences, { id, name: file.name, source, storageKey: id }])
+    } catch (error) {
+      Modal.error({ title: '默认参考图保存失败', content: error instanceof Error ? error.message : '请检查浏览器存储空间后重试。' })
+    } finally {
+      setIsSavingDefaultReference(false)
     }
-    setDefaultReferences([...defaultReferences, { id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, name: file.name, source }])
   }
 
-  /** 将默认参考图的项目静态路径或 Data URL 转为 Google inline 图片输入。 */
+  /** 删除默认参考图时同步清理 IndexedDB Blob 与临时预览地址，避免孤立数据。 */
+  const removeDefaultReference = async (reference: DefaultReference) => {
+    try {
+      if (reference.storageKey) await deleteDefaultReferenceBlob(reference.storageKey)
+      if (defaultReferenceObjectUrlsRef.current.delete(reference.source)) URL.revokeObjectURL(reference.source)
+      setDefaultReferences(defaultReferences.filter((item) => item.id !== reference.id))
+    } catch (error) {
+      Modal.error({ title: '默认参考图删除失败', content: error instanceof Error ? error.message : '请刷新页面后重试。' })
+    }
+  }
+
+  /** 将默认参考图的静态路径、旧 Data URL 或 IndexedDB Blob 转为 inline 图片输入。 */
   const toInlineReference = async (reference: DefaultReference): Promise<{ mimeType: string; data: string }> => {
     const dataUrlMatch = /^data:(image\/(?:png|jpeg|webp));base64,(.+)$/.exec(reference.source)
     if (dataUrlMatch) return { mimeType: dataUrlMatch[1], data: dataUrlMatch[2] }
+    const storageKey = reference.storageKey ?? parseDefaultReferenceStorageSource(reference.source)
+    if (storageKey) {
+      const blob = await loadDefaultReferenceBlob(storageKey)
+      if (!blob) throw new GeminiImageError(`无法读取默认参考图：${reference.name}。`)
+      const mimeType = blob.type || 'image/png'
+      return { mimeType, data: await fileToBase64(new File([blob], reference.name, { type: mimeType })) }
+    }
     const response = await fetch(reference.source)
     if (!response.ok) throw new GeminiImageError(`无法读取默认参考图：${reference.name}。`)
     const blob = await response.blob()
@@ -520,7 +612,59 @@ export default function ApiImageGenerator() {
               <label>数量 <Select value={quantity} disabled={isRunning} style={{ width: 92 }} onChange={setQuantity} options={[1, 3, 5, 10].map((value) => ({ value, label: String(value) }))} /></label>
               <label>背景 <Select value={background} disabled={isRunning} style={{ width: 110 }} onChange={setBackground} options={[{ value: 'white', label: '白色' }, { value: 'green', label: '绿色' }]} /></label>
             </Space>
-            <Collapse size="small" items={[{ key: 'advanced', label: '高级设置：默认参考图与布局规则', children: <Space orientation="vertical" size={16} style={{ width: '100%' }}><div><Text strong>默认参考图</Text><Text type="secondary">（与用户角色参考图独立，会随每次生成共同发送）</Text><input ref={defaultReferenceInputRef} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(event) => void selectDefaultReference(event.target.files?.[0])} /><div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 8 }}>{defaultReferences.map((reference) => <div key={reference.id} style={{ width: 112 }}><button type="button" className="api-preview-image-button" aria-label={`放大默认参考图：${reference.name}`} title="双击放大" onDoubleClick={() => showImagePreview(reference.source, reference.name)} onKeyDown={(event) => { if (event.key === 'Enter') showImagePreview(reference.source, reference.name) }}><img src={reference.source} alt={reference.name} /></button><Text ellipsis={{ tooltip: reference.name }} style={{ display: 'block' }}>{reference.name}</Text><Button type="link" size="small" danger disabled={isRunning} onClick={() => setDefaultReferences(defaultReferences.filter((item) => item.id !== reference.id))}>删除</Button></div>)}<Button icon={<UploadOutlined />} disabled={isRunning} onClick={() => defaultReferenceInputRef.current?.click()}>添加默认参考图</Button></div></div><div><Text type="warning">修改规则会直接影响生成结果，默认参考图不会替代这里的文字约束。</Text><Input.TextArea value={layoutRules} onChange={(event) => setLayoutRules(event.target.value)} autoSize={{ minRows: 7, maxRows: 16 }} disabled={isRunning} /><Button type="link" style={{ alignSelf: 'flex-start' }} disabled={isRunning} onClick={() => setLayoutRules(DEFAULT_LAYOUT_RULES)}>恢复默认规则</Button></div></Space> }]} />
+            <Collapse size="small" items={[{
+              key: 'advanced',
+              label: '高级设置：默认参考图与布局规则',
+              children: (
+                <Space orientation="vertical" size={16} style={{ width: '100%' }}>
+                  <div>
+                    <Text strong>默认参考图</Text>
+                    <Text type="secondary">（单张不超过 5MB，最多 6 张；生成时全部参考图合计不超过 14MB）</Text>
+                    <input
+                      ref={defaultReferenceInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      hidden
+                      onChange={(event) => {
+                        const file = event.target.files?.[0]
+                        event.target.value = ''
+                        void selectDefaultReference(file)
+                      }}
+                    />
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 8 }}>
+                      {defaultReferences.map((reference) => {
+                        const previewSource = parseDefaultReferenceStorageSource(reference.source) ? undefined : reference.source
+                        return (
+                          <div key={reference.id} style={{ width: 112 }}>
+                            <button
+                              type="button"
+                              className="api-preview-image-button"
+                              aria-label={`放大默认参考图：${reference.name}`}
+                              title={previewSource ? '双击放大' : '正在读取本地图片'}
+                              disabled={!previewSource}
+                              onDoubleClick={() => previewSource && showImagePreview(previewSource, reference.name)}
+                              onKeyDown={(event) => {
+                                if (event.key === 'Enter' && previewSource) showImagePreview(previewSource, reference.name)
+                              }}
+                            >
+                              {previewSource ? <img src={previewSource} alt={reference.name} /> : <Text type="secondary">读取中</Text>}
+                            </button>
+                            <Text ellipsis={{ tooltip: reference.name }} style={{ display: 'block' }}>{reference.name}</Text>
+                            <Button type="link" size="small" danger disabled={isRunning || isSavingDefaultReference} onClick={() => void removeDefaultReference(reference)}>删除</Button>
+                          </div>
+                        )
+                      })}
+                      <Button icon={<UploadOutlined />} loading={isSavingDefaultReference} disabled={isRunning || isSavingDefaultReference} onClick={() => defaultReferenceInputRef.current?.click()}>添加默认参考图</Button>
+                    </div>
+                  </div>
+                  <div>
+                    <Text type="warning">修改规则会直接影响生成结果，默认参考图不会替代这里的文字约束。</Text>
+                    <Input.TextArea value={layoutRules} onChange={(event) => setLayoutRules(event.target.value)} autoSize={{ minRows: 7, maxRows: 16 }} disabled={isRunning} />
+                    <Button type="link" style={{ alignSelf: 'flex-start' }} disabled={isRunning} onClick={() => setLayoutRules(DEFAULT_LAYOUT_RULES)}>恢复默认规则</Button>
+                  </div>
+                </Space>
+              ),
+            }]} />
             <Space wrap>
               <Text type="secondary">{estimatedCost}</Text>
               {isRunning && <Tag color="processing">正在顺序生成</Tag>}
